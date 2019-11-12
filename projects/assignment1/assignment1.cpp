@@ -22,7 +22,7 @@ project desc
 #include <glm/gtc/type_ptr.hpp>
 
 //objects
-#include "sphere.h"
+#include "sphere_tex.h"
 #include "cylinder.h"
 #include "tetrahedron.h"
 #include "triangle.h"
@@ -30,7 +30,8 @@ project desc
 //data & buffers
 GLuint elementbuffer;
 GLuint vao;
-GLuint program;
+GLuint programs[3];
+GLuint current_program;
 
 GLfloat aspect_ratio;
 
@@ -39,6 +40,8 @@ GLfloat aspect_ratio;
 GLuint drawmode;
 //light
 GLfloat light_x, light_y, light_z;
+GLfloat ambient_constant;
+GLuint ambient_constantID[3];
 //sphere
 GLuint numlats, numlongs;
 //scene rotations
@@ -52,8 +55,8 @@ GLfloat x,y,z;
 GLfloat view_move_x, view_move_y, view_move_z;
 
 //uniforms
-GLuint modelID, viewID, projectionID, lightposID, normalmatrixID, object_colourID;//data
-GLuint emitmodeID, colourmodeID;//switches
+GLuint modelID[3], viewID[3], projectionID[3], lightpos1ID[3], lightpos2ID[3], normalmatrixID[3], object_colourID[3];//data
+GLuint emitmodeID[3], colourmodeID[3];//switches
 GLuint emitmode, colourmode;//switches
 
 //objects
@@ -156,7 +159,7 @@ void init(GLWrapper* glw)
 	show_controls();
 
 	//user defined variables
-	light_x = light_y = light_z = 0;//light
+	light_x = light_y = light_z = 1;//light
 	numlats = numlongs = 60;//sphere
 	emitmode = 0;//lightsource
 	colourmode = 0;//object colours or 1 colour
@@ -170,6 +173,7 @@ void init(GLWrapper* glw)
 	camera_anim_start = false;
 	rotation_axis = vec3(0,0,0);
 	animation_direction = 1;
+	ambient_constant = .2f;
 
 	// Generate index (name) for one vertex array object
 	glGenVertexArrays(1, &vao);
@@ -180,8 +184,9 @@ void init(GLWrapper* glw)
 	/* Load and build the vertex and fragment shaders */
 	try
 	{
-		program = glw->LoadShader("..\\..\\shaders\\assignment1.vert", "..\\..\\shaders\\assignment1.frag");
-		//program[1] = glw->LoadShader("..\\..\\shaders\\basic.vert", "..\\..\\shaders\\basic.frag");
+		programs[0] = glw->LoadShader("..\\..\\shaders\\assignment1.vert", "..\\..\\shaders\\assignment1.frag");
+		programs[1] = glw->LoadShader("..\\..\\shaders\\assignment1.vert", "..\\..\\shaders\\fraglight_oren_nayar.frag");
+		programs[2] = glw->LoadShader("..\\..\\shaders\\assignment1.vert", "..\\..\\shaders\\assignment1_metal.frag");
 	}
 	catch (exception &e)
 	{
@@ -190,18 +195,25 @@ void init(GLWrapper* glw)
 		exit(0);
 	}
 
-	//vertex shader uniform data
-	modelID = glGetUniformLocation(program, "model");
-	viewID = glGetUniformLocation(program, "view");
-	projectionID = glGetUniformLocation(program, "projection");
-	normalmatrixID = glGetUniformLocation(program, "normalmatrix");
-	lightposID = glGetUniformLocation(program, "lightpos");
-	object_colourID = glGetUniformLocation(program, "object_colour");
-	//vertex shader uniform switches
-	colourmodeID = glGetUniformLocation(program, "colourmode");
-	//fragment shader uniform switches
-	emitmodeID = glGetUniformLocation(program, "emitmode");
-
+	/* Define the same uniforms to send to both shaders */
+	for (int i = 0; i < 3; i++)
+	{
+		glUseProgram(programs[i]);
+		//vertex shader uniform data
+		modelID[i] = glGetUniformLocation(programs[i], "model");
+		viewID[i] = glGetUniformLocation(programs[i], "view");
+		projectionID[i] = glGetUniformLocation(programs[i], "projection");
+		normalmatrixID[i] = glGetUniformLocation(programs[i], "normalmatrix");
+		lightpos1ID[i] = glGetUniformLocation(programs[i], "lightpos1");
+		lightpos2ID[i] = glGetUniformLocation(programs[i], "lightpos2");
+		object_colourID[i] = glGetUniformLocation(programs[i], "object_colour");
+		//vertex shader uniform switches
+		colourmodeID[i] = glGetUniformLocation(programs[i], "colourmode");
+		emitmodeID[i] = glGetUniformLocation(programs[i], "emitmode");
+		//fragment shader uniform switches
+		ambient_constantID[i] = glGetUniformLocation(programs[i], "ambient_constant");
+	}
+	current_program = 0;
 
 	//create objects
 	aSphere.makeSphere(numlats, numlongs);
@@ -210,10 +222,13 @@ void init(GLWrapper* glw)
 	aTriangle.makeTriangle();
 
 	//error check
-	GLint x1;
-	GLint* px = &x1;
-	glGetProgramiv(program, GL_ATTACHED_SHADERS, px);//change GL_ATTACHED_SHADERS to some program property from https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glGetProgram.xhtml
-	cout << "attached shaders: " << x1 << endl;
+	for (int i = 0; i < 3; i++)
+	{
+		GLint x1;
+		GLint* px = &x1;
+		glGetProgramiv(programs[i], GL_ATTACHED_SHADERS, px);//can change GL_ATTACHED_SHADERS to some program property from https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glGetProgram.xhtml
+		cout << "program " << i << ", attached shaders: " << x1 << endl;
+	}
 }
 
 void display()
@@ -228,8 +243,8 @@ void display()
 	glEnable(GL_DEPTH_TEST);
 
 	/* Make the compiled shader program current */
-	glUseProgram(program);
-
+	glUseProgram(programs[current_program]);
+	cout << current_program << endl;
 	// Define our model transformation in a stack and 
 	// push the identity matrix onto the stack
 	stack<mat4> model;
@@ -256,35 +271,16 @@ void display()
 	view = camera_anim(view);
 
 	// Define the light position and transform by the view matrix
-	vec4 lightpos = view * vec4(light_x, light_y, light_z, 1.0);
+	vec4 lightpos1 = view * vec4(light_x, light_y, light_z, 1.0);
+	vec4 lightpos2 = view * vec4(1, .8, 1, 1.0);
 
 	//uniforms
-	glUniformMatrix4fv(viewID, 1, GL_FALSE, &view[0][0]);
-	glUniformMatrix4fv(projectionID, 1, GL_FALSE, &projection[0][0]);
-	glUniform4fv(lightposID, 1, value_ptr(lightpos));
-	glUniform1ui(colourmodeID, colourmode);
-
-	//lightsource
-	model.push(model.top());
-	{
-		//transformations
-		model.top() = translate(model.top(), vec3(light_x, light_y, light_z));
-		model.top() = scale(model.top(), vec3(0.05f, 0.05f, 0.05f)); // make a small sphere
-
-		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
-		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
-		
-		//draw
-		emitmode = 1;
-		glUniform1ui(emitmodeID, emitmode);
-		//draw obj
-		aSphere.drawSphere(drawmode);
-		emitmode = 0;
-		glUniform1ui(emitmodeID, emitmode);
-	}
-	model.pop();
+	glUniformMatrix4fv(viewID[current_program], 1, GL_FALSE, &view[0][0]);
+	glUniformMatrix4fv(projectionID[current_program], 1, GL_FALSE, &projection[0][0]);
+	glUniform4fv(lightpos1ID[current_program], 2, value_ptr(lightpos1));
+	glUniform4fv(lightpos2ID[current_program], 2, value_ptr(lightpos2));
+	glUniform1ui(colourmodeID[current_program], colourmode);
+	glUniform1ui(ambient_constantID[current_program], ambient_constant);
 
 	//global transformations
 	//model.top() = scale(model.top(), vec3(model_scale, model_scale, model_scale));//scale equally in all axis
@@ -292,9 +288,53 @@ void display()
 	model.top() = rotate(model.top(), -radians(angle_y), glm::vec3(0, 1, 0)); //rotating in clockwise direction around y-axis
 	model.top() = rotate(model.top(), -radians(angle_z), glm::vec3(0, 0, 1)); //rotating in clockwise direction around z-axis
 
-	
+	//lightsource 1
+	model.push(model.top());
+	{
+		//transformations
+		model.top() = translate(model.top(), vec3(light_x, light_y, light_z));
+		model.top() = scale(model.top(), vec3(0.05f, 0.05f, 0.05f)); // make a small sphere
+
+		//uniforms
+		glUniformMatrix4fv(modelID[current_program], 1, GL_FALSE, &(model.top()[0][0]));
+		normalmatrix = transpose(inverse(mat3(view * model.top())));
+		glUniformMatrix3fv(normalmatrixID[current_program], 1, GL_FALSE, &normalmatrix[0][0]);
+		
+		//draw
+		emitmode = 1;
+		glUniform1ui(emitmodeID[current_program], emitmode);
+		//draw obj
+		aSphere.drawSphere(drawmode);
+		emitmode = 0;
+		glUniform1ui(emitmodeID[current_program], emitmode);
+	}
+	model.pop();
+
+	//lightsource 2
+	model.push(model.top());
+	{
+		//transformations
+		model.top() = translate(model.top(), vec3(1, .8, 1));
+		model.top() = scale(model.top(), vec3(0.05f, 0.05f, 0.05f)); // make a small sphere
+
+		//uniforms
+		glUniformMatrix4fv(modelID[current_program], 1, GL_FALSE, &(model.top()[0][0]));
+		normalmatrix = transpose(inverse(mat3(view * model.top())));
+		glUniformMatrix3fv(normalmatrixID[current_program], 1, GL_FALSE, &normalmatrix[0][0]);
+
+		//draw
+		emitmode = 1;
+		glUniform1ui(emitmodeID[current_program], emitmode);
+		//draw obj
+		aSphere.drawSphere(drawmode);
+		emitmode = 0;
+		glUniform1ui(emitmodeID[current_program], emitmode);
+	}
+	model.pop();
+
 	//VIEW POINTER
-	glUniform3fv(object_colourID, 1, value_ptr(colours[1]));//green
+	//colour
+	glUniform3fv(object_colourID[current_program], 1, value_ptr(colours[1]));//green
 	model.push(model.top());
 	{
 		//transformations
@@ -302,21 +342,23 @@ void display()
 		model.top() = scale(model.top(), vec3(1.f / 3.f, 1.f / 3.f, 1.f / 3.f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[current_program], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[current_program], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
-		emitmode = 1;
-		glUniform1ui(emitmodeID, emitmode);
+		//emitmode = 1;
+		//glUniform1ui(emitmodeID[current_program], emitmode);
 		aTetrahedron.drawTetrahedron(drawmode); // Draw our tetra
-		emitmode = 0;
-		glUniform1ui(emitmodeID, emitmode);
+		/*emitmode = 0;
+		glUniform1ui(emitmodeID[current_program], emitmode);*/
 	}
 	model.pop();
+
 	//WINDMILL BASE
 	model.top() = translate(model.top(), vec3(.5, 0, 0));
-	glUniform3fv(object_colourID, 1, value_ptr(colours[8]));//brown
+	//colour
+	glUniform3fv(object_colourID[current_program], 1, value_ptr(colours[8]));//brown
 	//sphere
 	model.push(model.top());
 	{
@@ -325,9 +367,9 @@ void display()
 		model.top() = scale(model.top(), vec3(1.f / 3.f, 1.f / 3.f, 1.f / 3.f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[current_program], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[current_program], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
 		aSphere.drawSphere(drawmode); // Draw our sphere
@@ -341,15 +383,26 @@ void display()
 		model.top() = scale(model.top(), vec3(1.f / 3.f, 1.f, 1.f / 3.f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[current_program], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[current_program], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
 		aCylinder.drawCylinder(drawmode); // Draw our cylinder
 	}
 	model.pop();
-	glUniform3fv(object_colourID, 1, value_ptr(colours[9]));//grey
+
+	//switch to oren nayar BRDF from phong BRDF
+	glUseProgram(programs[1]);
+	//uniforms
+	glUniformMatrix4fv(viewID[1], 1, GL_FALSE, &view[0][0]);
+	glUniformMatrix4fv(projectionID[1], 1, GL_FALSE, &projection[0][0]);
+	glUniform4fv(lightpos1ID[1], 1, value_ptr(lightpos1));
+	glUniform4fv(lightpos2ID[1], 1, value_ptr(lightpos2));
+	glUniform1ui(colourmodeID[1], colourmode);
+
+	//colour
+	glUniform3fv(object_colourID[1], 1, value_ptr(colours[9]));//grey
 	//windmillbase
 	model.push(model.top());
 	{
@@ -358,18 +411,51 @@ void display()
 		model.top() = scale(model.top(), vec3(1.f / 2.75f, 1.f / 3.f, 1.f / 2.75f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[1], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[1], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
 		aCylinder.drawCylinder(drawmode); // Draw our windmill base
 	}
 	model.pop();
 
-	//WINDMILL ARMS
+	//move forward for front objects
 	model.top() = translate(model.top(), vec3(0, .28, .35));
-	glUniform3fv(object_colourID, 1, value_ptr(colours[8]));//brown
+
+	//SAILS
+	glUniform3fv(object_colourID[1], 1, value_ptr(colours[7]));//white
+	for (int i = 0; i < 4; i++) {
+		//sails
+		model.push(model.top());
+		{
+			//transformations
+			model.top() = rotate(model.top(), radians(i * 90.f), glm::vec3(0, 0, 1)); //rotating in clockwise direction around x-axis
+			model.top() = rotate(model.top(), -radians(arm_speed), glm::vec3(0, 0, 1)); //rotating in clockwise direction around z-axis
+			model.top() = scale(model.top(), vec3(1.f / 2.f, 1.f / 2.f, 1.f / 3.f));//scale equally in all axis
+
+			//uniforms
+			glUniformMatrix4fv(modelID[1], 1, GL_FALSE, &(model.top()[0][0]));
+			normalmatrix = transpose(inverse(mat3(view * model.top())));
+			glUniformMatrix3fv(normalmatrixID[1], 1, GL_FALSE, &normalmatrix[0][0]);
+
+			//draw
+			aTriangle.drawTriangle(drawmode); // Draw our windmill base
+		}
+		model.pop();
+	}
+
+	//switch from oren nayar BRDF to cook-torrance BRDF
+	glUseProgram(programs[2]);
+	//uniforms
+	glUniformMatrix4fv(viewID[2], 1, GL_FALSE, &view[0][0]);
+	glUniformMatrix4fv(projectionID[2], 1, GL_FALSE, &projection[0][0]);
+	glUniform4fv(lightpos1ID[2], 1, value_ptr(lightpos1));
+	glUniform4fv(lightpos2ID[2], 1, value_ptr(lightpos2));
+	glUniform1ui(colourmodeID[2], colourmode);
+
+	//WINDMILL ARMS
+	glUniform3fv(object_colourID[2], 1, value_ptr(colours[8]));//brown
 	//armsbase
 	model.push(model.top());
 	{
@@ -378,9 +464,9 @@ void display()
 		model.top() = scale(model.top(), vec3(.25f / 3.f, .25f / 3.f, .25f / 3.f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[2], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[2], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
 		aCylinder.drawCylinder(drawmode); // Draw our windmill base
@@ -394,9 +480,9 @@ void display()
 		model.top() = scale(model.top(), vec3(.1f / 3.f, 1.f, .1f / 3.f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[2], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[2], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
 		aCylinder.drawCylinder(drawmode); // Draw our windmill base
@@ -410,36 +496,23 @@ void display()
 		model.top() = scale(model.top(), vec3(.1f / 3.f, 1.f, .1f / 3.f));//scale equally in all axis
 
 		//uniforms
-		glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
+		glUniformMatrix4fv(modelID[2], 1, GL_FALSE, &(model.top()[0][0]));
 		normalmatrix = transpose(inverse(mat3(view * model.top())));
-		glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
+		glUniformMatrix3fv(normalmatrixID[2], 1, GL_FALSE, &normalmatrix[0][0]);
 
 		//draw
 		aCylinder.drawCylinder(drawmode); // Draw our windmill base
 	}
 	model.pop();
-	//SAILS
-	glUniform3fv(object_colourID, 1, value_ptr(colours[7]));//white
-	for (int i = 0; i < 4; i++) {
-		//sails
-		model.push(model.top());
-		{
-			//transformations
-			//model.top() = translate(model.top(), vec3(0, 0, 0));
-			model.top() = rotate(model.top(), radians(i * 90.f), glm::vec3(0, 0, 1)); //rotating in clockwise direction around x-axis
-			model.top() = rotate(model.top(), -radians(arm_speed), glm::vec3(0, 0, 1)); //rotating in clockwise direction around z-axis
-			model.top() = scale(model.top(), vec3(1.f / 2.f, 1.f / 2.f, 1.f / 3.f));//scale equally in all axis
 
-			//uniforms
-			glUniformMatrix4fv(modelID, 1, GL_FALSE, &(model.top()[0][0]));
-			normalmatrix = transpose(inverse(mat3(view * model.top())));
-			glUniformMatrix3fv(normalmatrixID, 1, GL_FALSE, &normalmatrix[0][0]);
-
-			//draw
-			aTriangle.drawTriangle(drawmode); // Draw our windmill base
-		}
-		model.pop();
-	}
+	//switch from cook-torrance BRDF to phong BRDF
+	glUseProgram(programs[current_program]);
+	//uniforms
+	glUniformMatrix4fv(viewID[current_program], 1, GL_FALSE, &view[0][0]);
+	glUniformMatrix4fv(projectionID[current_program], 1, GL_FALSE, &projection[0][0]);
+	glUniform4fv(lightpos1ID[current_program], 1, value_ptr(lightpos1));
+	glUniform4fv(lightpos2ID[current_program], 1, value_ptr(lightpos2));
+	glUniform1ui(colourmodeID[current_program], colourmode);
 	
 	//modify animation variables
 	angle_x += angle_inc_x;
@@ -481,12 +554,27 @@ static void keyCallback(GLFWwindow* window, int key, int s, int action, int mods
 	{
 		drawmode++;
 		if (drawmode > 2) drawmode = 0;
+		cout << "drawmode=" << drawmode << endl;
+	}
+	if (key == '9' && action != GLFW_PRESS)
+	{
+		current_program++;
+		if (current_program > 2) current_program = 0;
+		cout << "current_program=" << current_program << endl;
 	}
 
 	if (key == '=' && action != GLFW_PRESS)
 	{
 		colourmode = !colourmode;
 		cout << "colourmode=" << colourmode << endl;
+	}
+
+	//ambient constant
+	if (key == 'J') {
+		ambient_constant += 0.05f;
+	}
+	if (key == 'K') {
+		ambient_constant -= 0.05f;
 	}
 
 	//light controls
@@ -602,7 +690,7 @@ static void keyCallback(GLFWwindow* window, int key, int s, int action, int mods
 	}
 	if (key == 'L' && action != GLFW_PRESS) {
 		GLint num_uniforms;
-		glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &num_uniforms);
+		glGetProgramiv(programs[current_program], GL_ACTIVE_UNIFORMS, &num_uniforms);
 		GLchar uniform_name[256];
 		GLsizei length;
 		GLint size;
@@ -610,7 +698,7 @@ static void keyCallback(GLFWwindow* window, int key, int s, int action, int mods
 		cout << "===active uniforms : " << num_uniforms << "===" << endl;
 		for (int i = 0; i < num_uniforms; i++)
 		{
-			glGetActiveUniform(program, i, sizeof(uniform_name), &length, &size, &type, uniform_name);
+			glGetActiveUniform(programs[current_program], i, sizeof(uniform_name), &length, &size, &type, uniform_name);
 			cout << "=" << uniform_name << "=" << length << "=" << size << "=" << type << "=" << endl;
 		}
 	}

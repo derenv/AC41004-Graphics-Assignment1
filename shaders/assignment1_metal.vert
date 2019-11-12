@@ -15,7 +15,7 @@ layout(location = 2) in vec3 normal;
 //out
 out vert_data{
 	vec4 vert_pos, vert_colour;
-	vec3 vert_normal, light_direction1, light_direction2;
+	vec3 vert_normal, light_direction;
 };
 
 //uniforms
@@ -23,12 +23,9 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
 uniform mat3 normalmatrix;
-uniform vec4 lightpos1;
-uniform vec4 lightpos2;
+uniform vec4 lightpos;
 uniform vec3 object_colour;
 uniform uint colourmode;
-
-uniform float ambient_constant;
 
 //globals
 //
@@ -51,12 +48,17 @@ void main()
 	vert_pos = mv_matrix * position_h;
 	vert_normal = normalize(normalmatrix * normal);
 
-	//calculate multiple light source directions
-	light_direction1 = lightpos1.xyz - vert_pos.xyz;
-	light_direction2 = lightpos2.xyz - vert_pos.xyz;
-
+	//FOR FUTURE USE
+	//lighting position(s) (make array if necessary)
+//	light_direction = lightpos[0].xyz - vert_pos.xyz;
+//	for(int i=1; i<sizeof(lightpos); i++){
+//		vec3 cur_light_direction = lightpos[i].xyz - vert_pos.xyz;
+//		if(cur_light_direction.x >= light_direction.x && cur_light_direction.y >= light_direction.y && cur_light_direction.z >= light_direction.z){
+//			light_direction = cur_light_direction
+//		}
+//	}
 	//calculate single light source direction
-	//light_direction = lightpos.xyz - vert_pos.xyz;
+	light_direction = lightpos.xyz - vert_pos.xyz;
 
 	gl_Position = (projection * view * model) * position_h;
 }
