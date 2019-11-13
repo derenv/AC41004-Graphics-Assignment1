@@ -1,8 +1,9 @@
 //fragment shader AC41001 Assignment 1
 //Deren Vural 2/11/2019
+//based on initial examples
 
 // Specify minimum OpenGL version
-#version 420 core
+#version 440 core
 
 //in
 in vert_data{
@@ -61,12 +62,11 @@ void main()
 	
 	//attenuation
 	float attenuation1 = calc_attenuation(light_direction1);
-	vec3 source1 = attenuation1*(ambient + diffuse1 + specular1);
-	
-	//source 2
 	float attenuation2 = calc_attenuation(light_direction1);
+	
+	//source
+	vec3 source1 = attenuation1*(ambient + diffuse1 + specular1);
 	vec3 source2 = attenuation2*(ambient + diffuse2 + specular2);
 
-
-	outputColor = vec4(source1/* + source2*/ + emissive + global_ambient, vert_colour.z);
+	outputColor = vec4(source1 + source2 + emissive + global_ambient, vert_colour.z);
 }

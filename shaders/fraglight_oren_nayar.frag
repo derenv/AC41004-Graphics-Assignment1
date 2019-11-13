@@ -1,32 +1,35 @@
+//fragment shader AC41001 Assignment 1
 // Fragment shader that implements Oren Nayar (diffuse)
 // per-fragment lighting for multiple light sources
+// based on Oren Nayar shader from Iain Martin
+//Deren Vural 12/11/2019
 
-#version 400
+// Specify minimum OpenGL version
+#version 440 core
 
-// Global constants (for this vertex shader)
-vec4 global_ambient = vec4(0.05, 0.05, 0.05, 1.0);
-
-// Inputs from the vertex shader
+//in
 in vert_data{
 	vec4 vert_pos, vert_colour;
 	vec3 vert_normal, light_direction1, light_direction2;
 };
 
+//out
+out vec4 outputColor;
+
+//globals
+vec4 global_ambient = vec4(0.05, 0.05, 0.05, 1.0);
+vec3 specular_albedo = vec3(1.0, 0.8, 0.6);
+const float PI = 3.141592653;
+const float roughness = 0.5;
+
+//uniforms
 uniform uint attenuationmode;
 uniform uint emitmode;
 uniform float ambient_constant;
 
-const float PI = 3.141592653;
-const float roughness = 0.5;
-
-// Output pixel fragment colour
-out vec4 outputColor;
-
-//
 vec4 calc_oren_nayar(vec3 light_direction, vec4 emissive, vec4 ambient, vec3 normal, vec3 view_dir){
 	//calculate light info
     vec3 light_dir = normalize(light_direction);
-	float distancetolight = length(light_direction);
 	
 	// Calculate these dot products which are used in the Oren Nayar equations below
     float NdotL = dot(normal, light_dir);
@@ -69,30 +72,8 @@ vec4 calc_oren_nayar(vec3 light_direction, vec4 emissive, vec4 ambient, vec3 nor
     float L2 = 0.17 * max(0.0, NdotL) * (roughnessSquared / (roughnessSquared + 0.13)) * (1.0 - gamma * twoBetaPi * twoBetaPi);
 
     vec4 oren_nayar = vec4(vert_colour.xyz * (L1 + L2), 1.0);
-	
-	// Calculate the attenuation factor;
-	// Turn off attenuation if attenuationmode is not set to 1 (on)
-	float attenuation;
-	if (attenuationmode != 1)
-	{
-		attenuation = 1.0;
-	}
-	else
-	{
-		// Define attenuation constants. These could be uniforms for greater flexibility
-		float attenuation_k1 = 0.5;
-		float attenuation_k2 = 0.5;
-		float attenuation_k3 = 0.5;
-		attenuation = 1.0 / (attenuation_k1 + attenuation_k2*distancetolight + attenuation_k3 * pow(distancetolight, 2));
-	}
-	
 
-	// Calculate the output colour, includung attenuation on the diffuse and specular components
-	// Note that you may want to exclude the ambient from the attenuation factor so objects
-	// are always visible, or include a global ambient
-	vec4 output_color = attenuation*(ambient + oren_nayar) + emissive + global_ambient;
-
-	return output_color;
+	return oren_nayar;
 }
 
 void main()
@@ -107,8 +88,32 @@ void main()
     vec3 view_dir = normalize(-vert_pos.xyz);
 
 	//calculate colour for each light
-	outputColor = calc_oren_nayar(light_direction1, emissive, ambient, normal, view_dir);
-	//outputColor = outputColor + calc_oren_nayar(light_direction2, emissive, ambient, normal, view_dir);
-	outputColor = outputColor;// + emissive + global_ambient;
+	vec4 oren_nayar1 = calc_oren_nayar(light_direction1, emissive, ambient, normal, view_dir);
+	vec4 oren_nayar2 = calc_oren_nayar(light_direction2, emissive, ambient, normal, view_dir);
+	
+	// Calculate the attenuation factor;
+	// Turn off attenuation if attenuationmode is not set to 1 (on)
+	float distancetolight1 = length(light_direction1);
+	float distancetolight2 = length(light_direction2);
+	float attenuation1;
+	float attenuation2;
+	if (attenuationmode != 1)
+	{
+		attenuation1 = attenuation2 = 1.0;
+	}
+	else
+	{
+		// Define attenuation constants. These could be uniforms for greater flexibility
+		float attenuation_k1 = 0.5;
+		float attenuation_k2 = 0.5;
+		float attenuation_k3 = 0.5;
+		attenuation1 = 1.0 / (attenuation_k1 + attenuation_k2*distancetolight1 + attenuation_k3 * pow(distancetolight1, 2));
+		attenuation2 = 1.0 / (attenuation_k1 + attenuation_k2*distancetolight2 + attenuation_k3 * pow(distancetolight2, 2));
+	}
+	
+	// Calculate the output colour, includung attenuation on the diffuse and specular components
+	// Note that you may want to exclude the ambient from the attenuation factor so objects
+	// are always visible, or include a global ambient
+	outputColor = attenuation1*(ambient + oren_nayar1) + attenuation2*(ambient + oren_nayar2) + emissive + global_ambient;
 
 }

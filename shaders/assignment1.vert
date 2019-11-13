@@ -1,5 +1,6 @@
 //vertex shader AC41001 Assignment 1
 //Deren Vural 2/11/2019
+//based on initial examples
 
 // Specify minimum OpenGL version
 #version 440 core
@@ -8,9 +9,6 @@
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec4 colour;
 layout(location = 2) in vec3 normal;
-
-//in
-//
 
 //out
 out vert_data{
@@ -27,11 +25,7 @@ uniform vec4 lightpos1;
 uniform vec4 lightpos2;
 uniform vec3 object_colour;
 uniform uint colourmode;
-
 uniform float ambient_constant;
-
-//globals
-//
 
 void main()
 {
@@ -54,9 +48,6 @@ void main()
 	//calculate multiple light source directions
 	light_direction1 = lightpos1.xyz - vert_pos.xyz;
 	light_direction2 = lightpos2.xyz - vert_pos.xyz;
-
-	//calculate single light source direction
-	//light_direction = lightpos.xyz - vert_pos.xyz;
 
 	gl_Position = (projection * view * model) * position_h;
 }

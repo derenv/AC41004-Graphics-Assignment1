@@ -1,10 +1,22 @@
-//fragment shader AC41001 Assignment 1
-//Deren Vural 2/11/2019
-//equation from: 
-//method from: 
+/*
+fragment shader AC41001 Assignment 1
+Deren Vural 11/11/2019
+equation from: https://graphicrants.blogspot.com/2013/08/specular-brdf-reference.html
+method from: https://stackoverflow.com/questions/24096041/how-to-properly-implement-cook-torrance-shading-in-three-js
+
+Cook-Torrance Equation:
+f(1,v) = D(h)F(v,h)G(l,v,h)
+				/
+			4(n.l)(n.v)
+(where alpha = roughness^2)
+
+D[Bekmann](m) = (alpha^2 / (PI * alpha^2 * (n.m)^4)) * exp[((n.m^2 - 1) / alpha^2 * (n.m)^2)]
+G[cook-torrance](l,v,h) = min[1,(2(n.h)(n.v)/v.h),(2(n.h)(n.l)/v.h)]
+F[cook-torrance](v,h) = (1/2) * ((g-c)/(g+c))^2 * (1+((g+c)*c - 1 / (g-c)c + 1)^2)
+*/
 
 // Specify minimum OpenGL version
-#version 420 core
+#version 440 core
 
 //in
 in vert_data{
@@ -16,13 +28,12 @@ in vert_data{
 out vec4 outputColor;
 
 //globals
-vec3 specular_albedo = vec3(1.0, 0.8, 0.6);
 vec3 global_ambient = vec3(0.05, 0.05, 0.05);
+vec3 specular_albedo = vec3(1.0, 0.8, 0.6);
 int  shininess = 8;
-
-//cook torrance
 const float PI = 3.141592653;
 float roughness = 0.5f;
+float F0 = 0.8f;
 
 //uniforms
 uniform uint emitmode;
@@ -44,8 +55,6 @@ float geometric_shadow(float NdotH, float NdotV, float VdotH, float NdotL){
 }
 
 vec3 fresnels(float VdotH){
-	float F0 = 0.8f;
-
 	//fresnel reflectance
 	float F = pow(1.0f - VdotH, 5.0);
 	F *= (1.0f - F0);
@@ -55,21 +64,6 @@ vec3 fresnels(float VdotH){
 }
 
 vec4 CookTorrance(vec3 light_direction){
-	/*
-	Cook-Torrance Equation
-
-	f(1,v) = D(h)F(v,h)G(l,v,h)
-				    /
-				4(n.l)(n.v)
-
-	(where alpha = roughness^2)
-
-	D[Bekmann](m) = (alpha^2 / (PI * alpha^2 * (n.m)^4)) * exp[((n.m^2 - 1) / alpha^2 * (n.m)^2)]
-
-	G[cook-torrance](l,v,h) = min[1,(2(n.h)(n.v)/v.h),(2(n.h)(n.l)/v.h)]
-
-	F[cook-torrance](v,h) = (1/2) * ((g-c)/(g+c))^2 * (1+((g+c)*c - 1 / (g-c)c + 1)^2)
-	*/
 	vec3 specular_light = vec3(0);
 
 	vec3 n = normalize(vert_normal);
@@ -97,26 +91,30 @@ vec4 CookTorrance(vec3 light_direction){
 void main()
 {
 	//diffuse
-	
-	vec3 diffuse = max(dot(vert_normal, normalize(light_direction1)), 0.0) * vert_colour.xyz;
+	vec3 diffuse1 = max(dot(vert_normal, normalize(light_direction1)), 0.0) * vert_colour.xyz;
+	vec3 diffuse2 = max(dot(vert_normal, normalize(light_direction2)), 0.0) * vert_colour.xyz;
 	
 	//ambient
 	vec3 ambient = vert_colour.xyz * ambient_constant;
 
 	//specular (metal)
-	vec4 specular = CookTorrance(light_direction1) * vec4(specular_albedo,1.0);
+	vec4 specular1 = CookTorrance(light_direction1) * vec4(specular_albedo,1.0);
+	vec4 specular2 = CookTorrance(light_direction1) * vec4(specular_albedo,1.0);
 
 	//attenuation
-	float attenuation;
+	float attenuation1;
+	float attenuation2;
 	float distanceToLight = length(light_direction1);
+	float distanceToLight2 = length(light_direction2);
 	float attenuation_k1 = 0.5;
 	float attenuation_k2 = 0.5;
 	float attenuation_k3 = 0.5;
-	attenuation = 1.0 / (attenuation_k1 + attenuation_k2*distanceToLight + attenuation_k3 * pow(distanceToLight, 2));
+	attenuation1 = 1.0 / (attenuation_k1 + attenuation_k2*distanceToLight + attenuation_k3 * pow(distanceToLight, 2));
+	attenuation2 = 1.0 / (attenuation_k1 + attenuation_k2*distanceToLight2 + attenuation_k3 * pow(distanceToLight2, 2));
 
 	//emissive
 	vec3 emissive = vec3(0);
 	if (emitmode == 1) emissive = vec3(1.0, 1.0, 0.8); 
 
-	outputColor = vec4(attenuation*(ambient + diffuse + specular.xyz) + emissive + global_ambient, 1.0);
+	outputColor = vec4(attenuation1*(ambient + diffuse1 + specular1.xyz) + attenuation2*(ambient + diffuse2 + specular2.xyz) + emissive + global_ambient, 1.0);
 }
